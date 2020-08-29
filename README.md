@@ -15,3 +15,10 @@ Command line usage
 ------------------
 
 TODO
+
+Rationale
+---------
+
+### Why Java, maven, and eclipse?
+
+'cause I'm lazy and wanted to do the project as fast as possible, instaed of bumping into language- or tooling induced problems. Java is my main language, thus using Java, even if it's not the best tool to nail this particular nail.
