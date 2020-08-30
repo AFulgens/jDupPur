@@ -16,16 +16,21 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
+import org.apache.commons.collections4.MultiValuedMap;
 import org.apache.commons.collections4.SetUtils;
+import org.apache.commons.collections4.multimap.ArrayListValuedHashMap;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.ArrayUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
+import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-public class Crawler {
+public final class Crawler {
 
 	private static final Logger LOG = LogManager.getLogger(Crawler.class);
 
@@ -42,7 +47,7 @@ public class Crawler {
 		return crawlerLogger;
 	}
 
-	public synchronized static Set<String> list(final String root) {
+	public synchronized static Set<String> list(final String root, final Set<Pattern> excludes) {
 		recursionLevel++;
 
 		final File rootFile = new File(root);
@@ -57,19 +62,31 @@ public class Crawler {
 			return Collections.emptySet();
 		}
 		final Set<String> directResults = Arrays.stream(files)
-				.filter(f -> f.canRead())
-				.filter(f -> !FileUtils.isSymlink(f))
-				.filter(f -> f.isFile())
-				.map(f -> f.getAbsolutePath())
+				.filter(FilePredicate.EXISTS)
+				.filter(FilePredicate.READABLE)
+				.filter(FilePredicate.NOT_SYMLINK)
+				.filter(FilePredicate.IS_FILE)
+				.map(File::getAbsolutePath)
+				.map(jDupPur::properAbsolutePath)
+				.filter(p -> {
+					for (final Pattern pattern : excludes) {
+						if (pattern.matcher(p).matches()) {
+							return false;
+						}
+					}
+					return true;
+				})
 				.collect(Collectors.toSet());
 		crawlerLogger.addFiles(directResults);
 		LOG.trace("[level: {}] {} real files in {}", recursionLevel, directResults.size(), root);
 		final Set<String> indirectResults = Arrays.stream(files)
-				.filter(f -> f.canRead())
-				.filter(f -> !FileUtils.isSymlink(f))
-				.filter(f -> f.isDirectory())
-				.map(d -> d.getAbsolutePath())
-				.flatMap(d -> list(d).stream())
+				.filter(FilePredicate.EXISTS)
+				.filter(FilePredicate.READABLE)
+				.filter(FilePredicate.NOT_SYMLINK)
+				.filter(FilePredicate.IS_DIRECTORY)
+				.map(File::getAbsolutePath)
+				.map(jDupPur::properAbsolutePath)
+				.flatMap(d -> list(d, excludes).stream())
 				.collect(Collectors.toSet());
 		LOG.trace("[level: {}] {} files recursively in {}", recursionLevel, indirectResults.size(), root);
 
@@ -78,40 +95,105 @@ public class Crawler {
 	}
 
 	public synchronized static Map<String, List<String>> index(final Set<String> fileList,
-			final Function<InputStream, String> digestFunction, final boolean parallel) {
+			final Function<InputStream, String> digestFunction, final boolean parallel, final Set<Pattern> excludes) {
 
 		crawlerLogger.turnOffListing();
 
-		// we expect some collisions, and if possible, don't want to have expands on this Map
-		final ConcurrentMap<String, List<String>> result = new ConcurrentHashMap<>((int)(fileList.size() * 1.5));
+		// we expect some collisions, and if possible, don't want to have expands on
+		// this Map
+		final ConcurrentMap<String, List<String>> result = new ConcurrentHashMap<>((int) (fileList.size() * 1.5));
 
-		conditionallyParallel(fileList.stream(), parallel).map(f -> new File(f)).filter(f -> {
-			if (!f.canRead()) {
-				LOG.warn("Cannot read file {}", f.getAbsolutePath());
-				return false;
-			}
-			return true;
-		}).filter(f -> {
-			if (f.isDirectory()) {
-				LOG.warn("{} is a directory", f.getAbsolutePath());
-				return false;
-			}
-			return true;
-		}).forEach(f -> {
-			try (final InputStream is = FileUtils.openInputStream(f)) {
-				result.computeIfAbsent(digestFunction.apply(is), k -> new ArrayList<>()).add(f.getAbsolutePath());
-				crawlerLogger.processed(f.getAbsolutePath());
-			} catch (FileNotFoundException fnfe) {
-				LOG.warn("File does not exist: {}", f.getAbsolutePath());
-			} catch (IOException e) {
-				LOG.warn("Could not read file: {}", f.getAbsolutePath());
-			}
-		});
+		jDupPur.conditionallyParallel(fileList.stream(), parallel)
+				.map(File::new)
+				.filter(FilePredicate.EXISTS)
+				.filter(FilePredicate.READABLE)
+				.filter(FilePredicate.NOT_SYMLINK)
+				.filter(FilePredicate.IS_FILE)
+				.filter(p -> {
+					for (final Pattern pattern : excludes) {
+						if (pattern.matcher(jDupPur.properAbsolutePath(p.getAbsolutePath())).matches()) {
+							return false;
+						}
+					}
+					return true;
+				})
+				.forEach(f -> {
+					try (final InputStream is = FileUtils.openInputStream(f)) {
+						result.computeIfAbsent(digestFunction.apply(is), k -> new ArrayList<>())
+								.add(jDupPur.properAbsolutePath(f.getAbsolutePath()));
+						crawlerLogger.processed(jDupPur.properAbsolutePath(f.getAbsolutePath()));
+					} catch (FileNotFoundException fnfe) {
+						LOG.error("{}: file does not exist", jDupPur.properAbsolutePath(f.getAbsolutePath()));
+					} catch (IOException e) {
+						LOG.error("{}: cannot read file", jDupPur.properAbsolutePath(f.getAbsolutePath()));
+					}
+				});
 
 		crawlerLogger.stop();
 		crawlerLoggerThread.interrupt();
 
 		return result;
+	}
+
+	public synchronized static Map<String, List<String>> reIndex(final List<String> indexAsList,
+			final Function<InputStream, String> digestFunction, final boolean parallel, final Set<Pattern> excludes) {
+
+		MultiValuedMap<String, String> index = new ArrayListValuedHashMap<>();
+		index: for (final String indexEntry : indexAsList) {
+			final String[] entry = StringUtils.splitByWholeSeparator(indexEntry, " *", 2);
+			for (final Pattern pattern : excludes) {
+				if (pattern.matcher(entry[1]).matches()) {
+					continue index;
+				}
+			}
+			index.put(entry[0], entry[1]);
+		}
+		crawlerLogger.addFiles(index.values());
+
+		crawlerLogger.turnOffListing();
+
+		AtomicLong ok = new AtomicLong(0L);
+		AtomicLong fail = new AtomicLong(0L);
+		Map<String, List<String>> reIndex = new ConcurrentHashMap<>();
+
+		jDupPur.conditionallyParallel(index.entries().stream(), parallel)
+				.map(e -> Pair.of(new File(e.getValue()), e.getKey()))
+				.filter(p -> FilePredicate.EXISTS.test(p.getLeft()))
+				.filter(p -> FilePredicate.READABLE.test(p.getLeft()))
+				.filter(p -> FilePredicate.NOT_SYMLINK.test(p.getLeft()))
+				.filter(p -> FilePredicate.IS_FILE.test(p.getLeft()))
+				.map(p -> {
+					try (final InputStream is = FileUtils.openInputStream(p.getLeft())) {
+						final String digest = digestFunction.apply(is);
+						crawlerLogger.processed(jDupPur.properAbsolutePath(p.getLeft().getAbsolutePath()));
+						return Pair.of(p.getLeft(), Pair.of(digest, p.getRight()));
+					} catch (FileNotFoundException fnfe) {
+						LOG.error("{}: File does not exist", jDupPur.properAbsolutePath(p.getLeft().getAbsolutePath()));
+						return null;
+					} catch (IOException e) {
+						LOG.error("{}: Could not read file", jDupPur.properAbsolutePath(p.getLeft().getAbsolutePath()));
+						return null;
+					}
+				})
+				.forEach(p -> {
+					if (p.getRight().getLeft().equalsIgnoreCase(p.getRight().getRight())) {
+						LOG.info("{}: OK", jDupPur.properAbsolutePath(p.getLeft().getAbsolutePath()));
+						ok.incrementAndGet();
+						reIndex.computeIfAbsent(p.getRight().getLeft(), k -> new ArrayList<>())
+								.add(jDupPur.properAbsolutePath(p.getLeft().getAbsolutePath()));
+					} else {
+						LOG.error("{}: FAIL", jDupPur.properAbsolutePath(p.getLeft().getAbsolutePath()));
+						fail.incrementAndGet();
+					}
+				});
+
+		crawlerLogger.stop();
+		crawlerLoggerThread.interrupt();
+
+		LOG.info("{} files were OK", ok.get());
+		LOG.log(fail.get() > 0 ? Level.ERROR : Level.INFO, "{} files were FAIL", fail.get());
+
+		return reIndex;
 	}
 
 	public static final class CrawlerLogger implements Runnable {
@@ -133,8 +215,21 @@ public class Crawler {
 
 		public void addFiles(final Collection<String> fileNames) {
 			if (listing.get()) {
-				int count = fileNames.size();
-				long size = fileNames.stream().map(f -> new File(f)).mapToLong(f -> FileUtils.sizeOf(f)).sum();
+				long count = fileNames.stream()
+						.map(File::new)
+						.filter(FilePredicate.EXISTS)
+						.filter(FilePredicate.READABLE)
+						.filter(FilePredicate.NOT_SYMLINK)
+						.filter(FilePredicate.IS_FILE)
+						.count();
+				long size = fileNames.stream()
+						.map(File::new)
+						.filter(FilePredicate.EXISTS)
+						.filter(FilePredicate.READABLE)
+						.filter(FilePredicate.NOT_SYMLINK)
+						.filter(FilePredicate.IS_FILE)
+						.mapToLong(FileUtils::sizeOf)
+						.sum();
 				fileCount.addAndGet(count);
 				cumulativeSize.addAndGet(size);
 				LOG.debug("{} files (with cumulative size {}) added to the logger", count,
@@ -218,14 +313,6 @@ public class Crawler {
 			}
 			LOG.info("Indexing finished, indexed {} files (with total size of {})", processedFileCount.get(),
 					FileUtils.byteCountToDisplaySize(processedCumulativeSize.get()));
-		}
-	}
-
-	private static <T> Stream<T> conditionallyParallel(final Stream<T> stream, final boolean makeParallel) {
-		if (makeParallel) {
-			return stream.parallel();
-		} else {
-			return stream;
 		}
 	}
 }
