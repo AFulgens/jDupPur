@@ -63,7 +63,7 @@ public final class Cli {
 	private static final Map<String, Pair<String, String>> OPTION_MAP = Map.ofEntries(
 			Map.entry(HELP, Pair.of("help", "print this message")),
 
-			Map.entry(QUIET, Pair.of("quiet", "do not print informal messages, only warnings and errors")),
+			Map.entry(QUIET, Pair.of("quiet", "do not print info messages, only warnings and errors")),
 			Map.entry(VERBOSE, Pair.of("verbose", "print debug messages (overrides -q,--quiet)")),
 			Map.entry(VERY_VERBOSE,
 					Pair.of("very-verbose", "print all log messages (overrides -v,--verbose and -q,--quiet)")),
@@ -73,14 +73,14 @@ public final class Cli {
 			Map.entry(EXCLUDE, Pair.of("exclude", "exclude paths, which match any of these regexes (separator: ' * ')")),
 			
 			Map.entry(HASH_FUNCTION,
-					Pair.of("hash-function", "overrides the hash function to be used (default: SHA-512")),
+					Pair.of("hash-function", "overrides the hash function to be used (default: SHA-512)")),
 
 			Map.entry(CREATE_INDEX, Pair.of("create-index",
 					"create purgatory index (recursively of the given path), must be coupled with -d,--check-duplicates or -o,--write-index; mutually exclusive with -c,--check")),
 			Map.entry(PARALLEL_INDEXING, Pair.of("parallel-indexing",
 					"if this flag is set, the indexing will be done in parallel (not recommended for HDDs) (default: not parallel)")),
-			Map.entry(WRITE_OUTPUT, Pair.of("write-index",
-					"writing the list created with -c,--check or -u,--create-purge-list into the file given with this option (file must not exist beforehand)")),
+			Map.entry(WRITE_OUTPUT, Pair.of("write-output",
+					"writing the list created with -r,--create-index or -u,--create-purge-list into the file given with this option (file must not exist beforehand)")),
 			Map.entry(SORT_INDEX,
 					Pair.of("sort-index",
 							"sort index before persisting (0: don't, 1: based on hash, 2: based on path; default: 1)")),
