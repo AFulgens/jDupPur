@@ -59,7 +59,6 @@ public final class Cli {
 
 	private static final String WRITE_OUTPUT = "o";
 
-	// TODO: support relative paths
 	private static final Options OPTIONS = new Options();
 	private static final Map<String, Pair<String, String>> OPTION_MAP = Map.ofEntries(
 			Map.entry(HELP, Pair.of("help", "print this message")),
@@ -72,7 +71,6 @@ public final class Cli {
 					"interval in seconds of logging during crawling, indexing, and purging (must be at least 1, default: Long.MAX_VALUE)")),
 
 			Map.entry(EXCLUDE, Pair.of("exclude", "exclude paths, which match any of these regexes (separator: ' * ')")),
-			// TODO: support files, which can list paths next to regexes
 			
 			Map.entry(HASH_FUNCTION,
 					Pair.of("hash-function", "overrides the hash function to be used (default: SHA-512")),
@@ -195,7 +193,7 @@ public final class Cli {
 
 	public static String getInput() {
 		if (cli.hasOption(CREATE_INDEX)) {
-			return cli.getOptionValue(CREATE_INDEX); // TODO: cli.getOptionValue(PURGE_BASE) if we support auto-purging (without risk...™)
+			return cli.getOptionValue(CREATE_INDEX);
 		} else if (cli.hasOption(CHECK)) {
 			return cli.getOptionValue(CHECK);
 		} else if (cli.hasOption(CREATE_PURGE_LIST)) {
