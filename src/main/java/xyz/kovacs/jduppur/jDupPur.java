@@ -9,7 +9,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -17,9 +16,11 @@ import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.apache.commons.collections4.SetUtils;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.RegExUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -63,7 +64,36 @@ public class jDupPur {
 				checkForDuplicates(reIndex);
 			}
 		} else if (Cli.createPurgatory()) {
-			final Pair<Map<String, Pair<String, String>>, Map<String, Pair<String, String>>> purgatory = createPurgatory();
+			final Pair<List<Pair<String, String>>, List<Pair<String, String>>> purgatory = createPurgatory();
+
+			if (LOG.isDebugEnabled()) {
+				purgatory.getLeft().stream().forEach(p -> {
+					LOG.debug("Duplicate directories found:" + System.getProperty("line.separator") + "\tdir A: {}"
+							+ System.getProperty("line.separator") + "\tdir B: {}", p.getLeft(), p.getRight());
+				});
+				purgatory.getRight().stream().forEach(p -> {
+					LOG.debug("Duplicate files found:" + System.getProperty("line.separator") + "\tfile A: {}"
+							+ System.getProperty("line.separator") + "\tfile B: {}", p.getLeft(), p.getRight());
+				});
+			}
+
+			final Set<String> toPurge = SetUtils.union(
+					purgatory.getLeft().stream().map(d -> d.getRight()).collect(Collectors.toSet()),
+					purgatory.getRight().stream().map(d -> d.getRight()).collect(Collectors.toSet()));
+
+			if (LOG.isInfoEnabled()) {
+				toPurge.stream().forEach(p -> {
+					LOG.info("To purge: {}", p);
+				});
+			}
+
+			if (Cli.writeOutput()) {
+				LOG.info("Writing purge list into {}", Cli.getOutput());
+
+				FileUtils.writeLines(new File(Cli.getOutput()), StandardCharsets.UTF_8.name(), toPurge);
+
+				LOG.info("Index written into {}", Cli.getOutput());
+			}
 		}
 
 		footprintLoggerThread.interrupt();
@@ -120,115 +150,6 @@ public class jDupPur {
 		return index;
 	}
 
-	private static Pair<Map<String, Pair<String, String>>, Map<String, Pair<String, String>>> createPurgatory() {
-		Map<String, Pair<String, String>> directories = new HashMap<>();
-		Map<String, Pair<String, String>> files = new HashMap<>();
-
-		// TODO: do a generic implementation of checkForDuplicates(index, index) -> use
-		// that to create a purgatory list and for checking duplicates in the same index
-
-		return Pair.of(directories, files);
-	}
-
-	private static void checkForDuplicates(final Map<String, List<String>> index) throws IOException {
-		final List<Pair<String, String>> duplicates = new ArrayList<>();
-		final List<Entry<String, List<String>>> candidates = index.entrySet()
-				.parallelStream()
-				.filter(e -> e.getValue().size() > 1)
-				.collect(Collectors.toList());
-		for (final Entry<String, List<String>> candidate : candidates) {
-			final List<String> candidateList = candidate.getValue().stream().sorted().collect(Collectors.toList());
-			final Iterator<String> candidateListOuterIterator = candidateList.iterator();
-			while (candidateListOuterIterator.hasNext()) {
-				final String outerCandidate = candidateListOuterIterator.next();
-				final Iterator<String> candidateListInnerIterator = candidateList.iterator();
-				while (candidateListInnerIterator.hasNext()) {
-					final String innerCandidate = candidateListInnerIterator.next();
-					if (innerCandidate.equals(outerCandidate)) {
-						continue;
-					}
-					if (FileUtils.contentEquals(new File(outerCandidate), new File(innerCandidate))) {
-						duplicates.add(Pair.of(outerCandidate, innerCandidate));
-						candidateListInnerIterator.remove();
-					} else {
-						LOG.fatal(
-								"You got a hash collision, how awesome is that? 😁 Hash: {}"
-										+ System.getProperty("line.separator") + "\tfileA: {}"
-										+ System.getProperty("line.separator") + "\tfileB: {}",
-								candidate.getKey(), outerCandidate, innerCandidate);
-						candidateListInnerIterator.remove();
-					}
-				}
-			}
-		}
-		List<Pair<String, String>> directories = new ArrayList<>();
-		if (Cli.consolidateDirectories()) {
-			List<String> primaries = duplicates.stream()
-					.map(Pair::getLeft)
-					.map(jDupPur::properAbsolutePath)
-					.collect(Collectors.toList());
-			List<String> secondaries = duplicates.stream()
-					.map(Pair::getRight)
-					.map(jDupPur::properAbsolutePath)
-					.collect(Collectors.toList());
-			primary: for (final String primary : primaries) {
-				for (final Pair<String, String> directory : directories) {
-					if (StringUtils.startsWithIgnoreCase(primary, directory.getLeft())) {
-						continue primary;
-					}
-				}
-
-				secondary: for (final String secondary : secondaries) {
-					for (final Pair<String, String> directory : directories) {
-						if (StringUtils.startsWithIgnoreCase(secondary, directory.getRight())) {
-							continue secondary;
-						}
-					}
-
-					if (StringUtils.substringAfterLast(primary, "/")
-							.equals(StringUtils.substringAfterLast(secondary, "/"))) {
-						final String primaryDirectory = StringUtils.substringBeforeLast(primary, "/");
-						final Collection<String> primaryFiles = FileUtils
-								.listFiles(new File(primaryDirectory), null, false)
-								.stream()
-								.map(File::getAbsolutePath)
-								.map(jDupPur::properAbsolutePath)
-								.collect(Collectors.toList());
-						if (primaries.containsAll(primaryFiles)) {
-							final String secondaryDirectory = StringUtils.substringBeforeLast(secondary, "/");
-							final Collection<String> secondaryFiles = FileUtils
-									.listFiles(new File(secondaryDirectory), null, false)
-									.stream()
-									.map(File::getAbsolutePath)
-									.map(jDupPur::properAbsolutePath)
-									.collect(Collectors.toList());
-							if (secondaries.containsAll(secondaryFiles)) {
-								directories.add(Pair.of(primaryDirectory, secondaryDirectory));
-							}
-						}
-					}
-				}
-			}
-
-			directories.stream().forEach(p -> {
-				LOG.warn("Duplicate directories found:" + System.getProperty("line.separator") + "\tdir A: {}"
-						+ System.getProperty("line.separator") + "\tdir B: {}", p.getLeft(), p.getRight());
-			});
-		}
-		List<String> directoriesToSkip = directories.stream().map(Pair::getRight).collect(Collectors.toList());
-		duplicates.stream().filter(p -> {
-			for (final String directory : directoriesToSkip) {
-				if (p.getRight().startsWith(directory)) {
-					return false;
-				}
-			}
-			return true;
-		}).forEach(p -> {
-			LOG.warn("Duplicate files found:" + System.getProperty("line.separator") + "\tfile A: {}"
-					+ System.getProperty("line.separator") + "\tfile B: {}", p.getLeft(), p.getRight());
-		});
-	}
-
 	private static void writeIndex(final Map<String, List<String>> index) throws IOException {
 		final List<String> output = new ArrayList<>(index.size());
 		LOG.info("Writing index into {}", Cli.getOutput());
@@ -273,6 +194,138 @@ public class jDupPur {
 		LOG.info("{} files re-indexed in {}", input.size(), humanReadableTime(end - start));
 
 		return reIndex;
+	}
+
+	private static void checkForDuplicates(final Map<String, List<String>> index) throws IOException {
+		final Pair<List<Pair<String, String>>, List<Pair<String, String>>> diff = diffIndexes(index, index);
+
+		diff.getLeft().stream().forEach(p -> {
+			LOG.warn("Duplicate directories found:" + System.getProperty("line.separator") + "\tdir A: {}"
+					+ System.getProperty("line.separator") + "\tdir B: {}", p.getLeft(), p.getRight());
+		});
+		diff.getRight().stream().forEach(p -> {
+			LOG.warn("Duplicate files found:" + System.getProperty("line.separator") + "\tfile A: {}"
+					+ System.getProperty("line.separator") + "\tfile B: {}", p.getLeft(), p.getRight());
+		});
+	}
+
+	private static Pair<List<Pair<String, String>>, List<Pair<String, String>>> createPurgatory() throws IOException {
+		final String[] indexes = Cli.getInput().split("\\*");
+		final Pair<List<Pair<String, String>>, List<Pair<String, String>>> result =  diffIndexes(readIndex(indexes[0]), readIndex(indexes[1]));
+		
+		return result;
+	}
+
+	private static Map<String, List<String>> readIndex(final String indexFileName) throws IOException {
+		final List<String> input = FileUtils.readLines(new File(indexFileName), StandardCharsets.UTF_8);
+		LOG.info("{} files listed in index {}", input.size(), indexFileName);
+
+		final Map<String, List<String>> index = new HashMap<>(input.size(), 1.0f);
+		for (final String line : input) {
+			final String[] entry = StringUtils.splitByWholeSeparator(line, " *", 2);
+			index.computeIfAbsent(entry[0], k -> new ArrayList<>(1)).add(entry[1]);
+		}
+
+		return index;
+	}
+
+	private static Pair<List<Pair<String, String>>, List<Pair<String, String>>> diffIndexes(
+			final Map<String, List<String>> primaryIndex, final Map<String, List<String>> purgatoryIndex)
+			throws IOException {
+
+		final List<Pair<String, String>> files = new ArrayList<>();
+
+		for (final Entry<String, List<String>> primaryEntry : primaryIndex.entrySet()) {
+			String consideredFile = primaryEntry.getValue().get(0);
+			seeker: if (!Cli.getExcludes().isEmpty()) {
+				for (final Pattern exclusionPattern : Cli.getExcludes()) {
+					for (final String candidateFile : primaryEntry.getValue()) {
+						if (!exclusionPattern.matcher(candidateFile).matches()) {
+							consideredFile = candidateFile;
+							break seeker;
+						}
+					}
+				}
+				continue;
+			}
+
+			for (final String candidateDuplicate : purgatoryIndex.get(primaryEntry.getKey())) {
+				if (consideredFile.equals(candidateDuplicate)) {
+					continue;
+				}
+
+				if (FileUtils.contentEquals(new File(consideredFile), new File(candidateDuplicate))) {
+					files.add(Pair.of(consideredFile, candidateDuplicate));
+				} else {
+					LOG.fatal(
+							"You got a hash collision, how awesome is that? 😁 Hash: {}"
+									+ System.getProperty("line.separator") + "\tfileA: {}"
+									+ System.getProperty("line.separator") + "\tfileB: {}",
+							primaryEntry.getKey(), consideredFile, candidateDuplicate);
+				}
+			}
+		}
+
+		List<Pair<String, String>> directories = new ArrayList<>();
+		if (Cli.consolidateDirectories()) {
+			List<String> primaries = files.stream()
+					.map(Pair::getLeft)
+					.map(jDupPur::properAbsolutePath)
+					.collect(Collectors.toList());
+			List<String> secondaries = files.stream()
+					.map(Pair::getRight)
+					.map(jDupPur::properAbsolutePath)
+					.collect(Collectors.toList());
+			primary: for (final String primary : primaries) {
+				for (final Pair<String, String> directory : directories) {
+					if (StringUtils.startsWithIgnoreCase(primary, directory.getLeft())) {
+						continue primary;
+					}
+				}
+
+				secondary: for (final String secondary : secondaries) {
+					for (final Pair<String, String> directory : directories) {
+						if (StringUtils.startsWithIgnoreCase(secondary, directory.getRight())) {
+							continue secondary;
+						}
+					}
+
+					if (StringUtils.substringAfterLast(primary, "/")
+							.equals(StringUtils.substringAfterLast(secondary, "/"))) {
+						final String primaryDirectory = StringUtils.substringBeforeLast(primary, "/");
+						final Collection<String> primaryFiles = FileUtils
+								.listFiles(new File(primaryDirectory), null, false)
+								.stream()
+								.map(File::getAbsolutePath)
+								.map(jDupPur::properAbsolutePath)
+								.collect(Collectors.toList());
+						if (primaries.containsAll(primaryFiles)) {
+							final String secondaryDirectory = StringUtils.substringBeforeLast(secondary, "/");
+							final Collection<String> secondaryFiles = FileUtils
+									.listFiles(new File(secondaryDirectory), null, false)
+									.stream()
+									.map(File::getAbsolutePath)
+									.map(jDupPur::properAbsolutePath)
+									.collect(Collectors.toList());
+							if (secondaries.containsAll(secondaryFiles)) {
+								directories.add(Pair.of(primaryDirectory, secondaryDirectory));
+							}
+						}
+					}
+				}
+			}
+		}
+		List<String> directoriesToSkip = directories.stream().map(Pair::getRight).collect(Collectors.toList());
+		List<Pair<String, String>> filesNotInDuplicateDirectories = files.stream().filter(p -> {
+			for (final String directory : directoriesToSkip) {
+				if (p.getRight().startsWith(directory)) {
+					return false;
+				}
+			}
+			return true;
+		}).collect(Collectors.toList());
+
+		return Pair.of(directories, filesNotInDuplicateDirectories);
 	}
 
 	public static <T> Stream<T> conditionallyParallel(final Stream<T> stream, final boolean makeParallel) {

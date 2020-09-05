@@ -271,6 +271,10 @@ public final class Crawler {
 
 		@Override
 		public void run() {
+			if (!LOG.isInfoEnabled()) {
+				return;
+			}
+			
 			boolean indexingOngoing = false;
 			long start = System.nanoTime();
 			while (!stopped.get()) {

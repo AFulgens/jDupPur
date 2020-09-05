@@ -47,7 +47,7 @@ public enum FilePredicate implements Predicate<File> {
 		if (tester.apply(f)) {
 			return true;
 		}
-		LOG.debug("{}: {}", jDupPur.properAbsolutePath(f.getAbsolutePath()), message);
+		LOG.trace("{}: {}", jDupPur.properAbsolutePath(f.getAbsolutePath()), message);
 		return false;
 	}
 
