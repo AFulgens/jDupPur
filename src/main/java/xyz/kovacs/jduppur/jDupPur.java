@@ -64,39 +64,22 @@ public class jDupPur {
 				checkForDuplicates(reIndex);
 			}
 		} else if (Cli.createPurgatory()) {
-			final Pair<List<Pair<String, String>>, List<Pair<String, String>>> purgatory = createPurgatory();
-
-			if (LOG.isDebugEnabled()) {
-				purgatory.getLeft().stream().forEach(p -> {
-					LOG.debug("Duplicate directories found:" + System.getProperty("line.separator") + "\tdir A: {}"
-							+ System.getProperty("line.separator") + "\tdir B: {}", p.getLeft(), p.getRight());
-				});
-				purgatory.getRight().stream().forEach(p -> {
-					LOG.debug("Duplicate files found:" + System.getProperty("line.separator") + "\tfile A: {}"
-							+ System.getProperty("line.separator") + "\tfile B: {}", p.getLeft(), p.getRight());
-				});
-			}
-
-			final Set<String> toPurge = SetUtils.union(
-					purgatory.getLeft().stream().map(d -> d.getRight()).collect(Collectors.toSet()),
-					purgatory.getRight().stream().map(d -> d.getRight()).collect(Collectors.toSet()));
-
-			if (LOG.isInfoEnabled()) {
-				toPurge.stream().forEach(p -> {
-					LOG.info("To purge: {}", p);
-				});
-			}
+			final Set<String> toPurge = createPurgatory();
 
 			if (Cli.writeOutput()) {
-				LOG.info("Writing purge list into {}", Cli.getOutput());
-
-				FileUtils.writeLines(new File(Cli.getOutput()), StandardCharsets.UTF_8.name(), toPurge);
-
-				LOG.info("Index written into {}", Cli.getOutput());
+				writePurgatory(toPurge);
 			}
 		}
 
 		footprintLoggerThread.interrupt();
+	}
+
+	public static <T> Stream<T> conditionallyParallel(final Stream<T> stream, final boolean makeParallel) {
+		if (makeParallel) {
+			return stream.parallel();
+		} else {
+			return stream;
+		}
 	}
 
 	public static String humanReadableTime(final long durationInNanos) {
@@ -127,6 +110,10 @@ public class jDupPur {
 		return builder.toString();
 	}
 
+	public static String properAbsolutePath(final String inproperAbsolutePath) {
+		return RegExUtils.replaceAll(RegExUtils.replaceAll(inproperAbsolutePath, "\\\\", "/"), "/+", "/");
+	}
+
 	private static Map<String, List<String>> createIndex() {
 		if (!(Cli.checkDuplicates() || Cli.writeOutput())) {
 			throw new IllegalArgumentException(
@@ -148,6 +135,60 @@ public class jDupPur {
 			}
 		}
 		return index;
+	}
+
+	private static Map<String, List<String>> reIndex() throws IOException {
+		final List<String> input = FileUtils.readLines(new File(Cli.getInput()), StandardCharsets.UTF_8);
+		LOG.info("{} files listed in index {}", input.size(), Cli.getInput());
+	
+		final long start = System.nanoTime();
+		Map<String, List<String>> reIndex = Crawler.reIndex(input, Cli.getDigest(), Cli.getParallel(),
+				Cli.getExcludes());
+		final long end = System.nanoTime();
+		LOG.info("{} files re-indexed in {}", input.size(), humanReadableTime(end - start));
+	
+		return reIndex;
+	}
+
+	private static Set<String> createPurgatory() throws IOException {
+		final String[] indexes = Cli.getInput().split("\\*");
+		final Pair<List<Pair<String, String>>, List<Pair<String, String>>> purgatory =  diffIndexes(readIndex(indexes[0]), readIndex(indexes[1]));
+		
+		if (LOG.isDebugEnabled()) {
+			purgatory.getLeft().stream().forEach(p -> {
+				LOG.debug("Duplicate directories found:" + System.getProperty("line.separator") + "\tdir A: {}"
+						+ System.getProperty("line.separator") + "\tdir B: {}", p.getLeft(), p.getRight());
+			});
+			purgatory.getRight().stream().forEach(p -> {
+				LOG.debug("Duplicate files found:" + System.getProperty("line.separator") + "\tfile A: {}"
+						+ System.getProperty("line.separator") + "\tfile B: {}", p.getLeft(), p.getRight());
+			});
+		}
+	
+		final Set<String> toPurge = SetUtils.union(
+				purgatory.getLeft().stream().map(d -> d.getRight()).collect(Collectors.toSet()),
+				purgatory.getRight().stream().map(d -> d.getRight()).collect(Collectors.toSet()));
+		
+		if (LOG.isInfoEnabled()) {
+			toPurge.stream().forEach(p -> {
+				LOG.info("To purge: {}", p);
+			});
+		}
+	
+		return toPurge;
+	}
+
+	private static void checkForDuplicates(final Map<String, List<String>> index) throws IOException {
+		final Pair<List<Pair<String, String>>, List<Pair<String, String>>> diff = diffIndexes(index, index);
+	
+		diff.getLeft().stream().forEach(p -> {
+			LOG.warn("Duplicate directories found:" + System.getProperty("line.separator") + "\tdir A: {}"
+					+ System.getProperty("line.separator") + "\tdir B: {}", p.getLeft(), p.getRight());
+		});
+		diff.getRight().stream().forEach(p -> {
+			LOG.warn("Duplicate files found:" + System.getProperty("line.separator") + "\tfile A: {}"
+					+ System.getProperty("line.separator") + "\tfile B: {}", p.getLeft(), p.getRight());
+		});
 	}
 
 	private static void writeIndex(final Map<String, List<String>> index) throws IOException {
@@ -183,37 +224,12 @@ public class jDupPur {
 		LOG.info("Index written into {}", Cli.getOutput());
 	}
 
-	private static Map<String, List<String>> reIndex() throws IOException {
-		final List<String> input = FileUtils.readLines(new File(Cli.getInput()), StandardCharsets.UTF_8);
-		LOG.info("{} files listed in index {}", input.size(), Cli.getInput());
-
-		final long start = System.nanoTime();
-		Map<String, List<String>> reIndex = Crawler.reIndex(input, Cli.getDigest(), Cli.getParallel(),
-				Cli.getExcludes());
-		final long end = System.nanoTime();
-		LOG.info("{} files re-indexed in {}", input.size(), humanReadableTime(end - start));
-
-		return reIndex;
-	}
-
-	private static void checkForDuplicates(final Map<String, List<String>> index) throws IOException {
-		final Pair<List<Pair<String, String>>, List<Pair<String, String>>> diff = diffIndexes(index, index);
-
-		diff.getLeft().stream().forEach(p -> {
-			LOG.warn("Duplicate directories found:" + System.getProperty("line.separator") + "\tdir A: {}"
-					+ System.getProperty("line.separator") + "\tdir B: {}", p.getLeft(), p.getRight());
-		});
-		diff.getRight().stream().forEach(p -> {
-			LOG.warn("Duplicate files found:" + System.getProperty("line.separator") + "\tfile A: {}"
-					+ System.getProperty("line.separator") + "\tfile B: {}", p.getLeft(), p.getRight());
-		});
-	}
-
-	private static Pair<List<Pair<String, String>>, List<Pair<String, String>>> createPurgatory() throws IOException {
-		final String[] indexes = Cli.getInput().split("\\*");
-		final Pair<List<Pair<String, String>>, List<Pair<String, String>>> result =  diffIndexes(readIndex(indexes[0]), readIndex(indexes[1]));
-		
-		return result;
+	private static void writePurgatory(final Set<String> toPurge) throws IOException {
+		LOG.info("Writing purge list into {}", Cli.getOutput());
+	
+		FileUtils.writeLines(new File(Cli.getOutput()), StandardCharsets.UTF_8.name(), toPurge);
+	
+		LOG.info("Index written into {}", Cli.getOutput());
 	}
 
 	private static Map<String, List<String>> readIndex(final String indexFileName) throws IOException {
@@ -326,18 +342,6 @@ public class jDupPur {
 		}).collect(Collectors.toList());
 
 		return Pair.of(directories, filesNotInDuplicateDirectories);
-	}
-
-	public static <T> Stream<T> conditionallyParallel(final Stream<T> stream, final boolean makeParallel) {
-		if (makeParallel) {
-			return stream.parallel();
-		} else {
-			return stream;
-		}
-	}
-
-	public static String properAbsolutePath(final String inproperAbsolutePath) {
-		return RegExUtils.replaceAll(RegExUtils.replaceAll(inproperAbsolutePath, "\\\\", "/"), "/+", "/");
 	}
 
 	private static final class FootprintLogger implements Runnable {
