@@ -49,7 +49,7 @@ Output: a file containing a SHA-512 for all files (recursively) found in `C:\Use
 #### Second run:
 `--logger-interval 5 --very-verbose --consolidate-directories --check-duplicates C:\Users\foo\docs.sha512`
 
-Output: a file, listing candidate directories and files, which are duplicated within `C:\Users\foo\Documents\`. Please note that some duplication are totally legit (e.g. if you have websites exported, then a lot of `.js` files or even images will be duplicated, because that's how those dumps work).
+Output: a file, listing candidate directories and files, which are duplicated within `C:\Users\foo\Documents\`. Please note that some duplications are totally legit (e.g. if you have websites exported, then a lot of `.js` files or even images will be duplicated, because that's how those dumps work).
 
 
 Command line parameters
@@ -115,7 +115,7 @@ No, use it at your own risk.
 
 ### Is this compatible with X?
 
-Theoritically yes. It's "compatible" with the various `...sum` utilities of *nix and with Total Commander in the sense that the output format is the same as with those tools. This tool, however, supports stricly absolute paths, thus if you create a checksum file with some other tool, which contains relative paths, `jDupPur` can't use that.
+Theoritically, yes. It's "compatible" with the various `...sum` utilities of *nix and with Total Commander in the sense that the output format is the same as with those tools. This tool, however, supports strictly absolute paths, thus if you create a checksum file with some other tool, which contains relative paths, `jDupPur` can't use that.
 
 Another difference is that for `jDupPur` a file not existing is no biggie and will land only on the DEBUG-log, not on WARN/ERROR (in constrast to failing checksums). Files with matching hashes ("OK") land on the INFO-log.
 
@@ -123,11 +123,11 @@ Another difference is that for `jDupPur` a file not existing is no biggie and wi
 
 Performant enough for my purposes.
 
-I did not put too much effort into fine-tuning the code itself (memory consumption, CPU cycles), because based on my experience, the bottleneck is anyways I/O on the disk (even for SSDs), although with stream multi-threading is so easy that I opted for it. Plus some light-weight profiling with jVisualVM seem to confirm my assumptions.
+I did not put too much effort into fine-tuning the code itself (memory consumption, CPU cycles), because based on my experience, the bottleneck is anyways I/O on the disk (even for SSDs), although with stream multi-threading is so easy that I opted for it. Plus some light-weight profiling with jVisualVM seems to confirm my assumptions.
 
-On my SSD (Samsung SSD 850 PRO) the current state of software resulted in parallel 100% I/O at around 550MB/s instead of the single-threaded performance of around 200MB/s. See, of course, [caveats for parallel streams](https://gist.github.com/AFulgens/ba1fec3235cfda1269550fb8e9793db3). Here the trade-off is that reading many smaller files on one thread and some bigger files on other threads seem to balance corrently with parallelism. On an HDD this won't work, that's why there is a switch 😎 My numbers on an HDD (Toshiba Performance X300 via USB3) were around 120MB/s for a single threaded read (of bigger files, dropping to 40-50 MB/s for many small files), while the parallel indexing couldn't go above 60MB/s. On a NAS (RAID6 of 8 WD Red PROs) TODO.
+On my SSD (Samsung SSD 850 PRO) the current state of software resulted in parallel 100% I/O at around 550MB/s instead of the single-threaded performance of around 200MB/s. See, of course, [caveats for parallel streams](https://gist.github.com/AFulgens/ba1fec3235cfda1269550fb8e9793db3). Here the trade-off is that reading many smaller files on one thread and some bigger files on other threads seem to balance correctly with parallelism. On an HDD this won't work, that's why there is a switch 😎 My numbers on an HDD (Toshiba Performance X300 via USB3) were around 120MB/s for a single threaded read (of bigger files, dropping to 40-50 MB/s for many small files), while the parallel indexing couldn't go above 60MB/s. On a NAS (RAID6 of 8 WD Red PROs) TODO.
 
-On a sustained read (e.g. check of 200GB), on an SSD with parallelism I get ≈30% reduced runtime against a serials check (e.g. compared to Total Commander). On smaller chunks (9 GB of variously sized files) you can get a doubling of speed or even a bit more compared to a single thread.
+On a sustained read (e.g. check of 200GB of big files), on an SSD with parallelism I get ≈30% reduced runtime against a serial check (e.g. compared to Total Commander). On smaller chunks (e.g. 9 GB of variously sized files) you can get a doubling of speed, or even a bit more, compared to a single thread.
 
 ### Why Java, maven, and eclipse?
 
@@ -137,6 +137,6 @@ On a sustained read (e.g. check of 200GB), on an SSD with parallelism I get ≈3
 
 Probably. I had a little bit of fun here and there.
 
-### Why do you litter `final` for everything possible, why is everything possible with streams/lambdas?
+### Why do you litter `final` for everything possible, why is everything possible written with streams/lambdas?
 
 That's an inside joke. Basically just to make extension/debugging as hard as possible.

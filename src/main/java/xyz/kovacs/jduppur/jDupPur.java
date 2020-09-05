@@ -75,11 +75,7 @@ public class jDupPur {
 	}
 
 	public static <T> Stream<T> conditionallyParallel(final Stream<T> stream, final boolean makeParallel) {
-		if (makeParallel) {
-			return stream.parallel();
-		} else {
-			return stream;
-		}
+		return makeParallel ? stream.parallel() : stream; // NOTE: we are not forcing sequential in case !makeParallel
 	}
 
 	public static String humanReadableTime(final long durationInNanos) {

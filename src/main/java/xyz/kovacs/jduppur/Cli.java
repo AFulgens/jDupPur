@@ -343,7 +343,7 @@ public final class Cli {
 				long interval = Long.parseLong(cli.getOptionValue(LOGGER_INTERVAL));
 				if (interval <= 0) {
 					throw new ParseException(
-							"Logger interval must be at least 1000, but it was " + cli.getOptionValue(LOGGER_INTERVAL));
+							"Logger interval must be at least 1, but it was " + cli.getOptionValue(LOGGER_INTERVAL));
 				}
 			} catch (final NumberFormatException nfe) {
 				throw new ParseException(

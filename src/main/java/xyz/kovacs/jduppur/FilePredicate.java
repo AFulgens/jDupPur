@@ -1,7 +1,6 @@
 package xyz.kovacs.jduppur;
 
 import java.io.File;
-import java.util.function.Function;
 import java.util.function.Predicate;
 
 import org.apache.commons.io.FileUtils;
@@ -25,7 +24,7 @@ public enum FilePredicate implements Predicate<File> {
 	NOT_SYMLINK {
 		@Override
 		public boolean test(File f) {
-			return test(f, file -> !FileUtils.isSymlink(file), "is a symlink");
+			return test(f, Predicate.not(FileUtils::isSymlink), "is a symlink");
 		}
 	},
 	IS_FILE {
@@ -43,8 +42,8 @@ public enum FilePredicate implements Predicate<File> {
 	
 	private static final Logger LOG = LogManager.getLogger(FilePredicate.class);
 	
-	private static boolean test(final File f, final Function<File, Boolean> tester, final String message) {
-		if (tester.apply(f)) {
+	private static boolean test(final File f, final Predicate<File> tester, final String message) {
+		if (tester.test(f)) {
 			return true;
 		}
 		LOG.trace("{}: {}", jDupPur.properAbsolutePath(f.getAbsolutePath()), message);
@@ -52,5 +51,5 @@ public enum FilePredicate implements Predicate<File> {
 	}
 
 	@Override
-	public abstract boolean test(File t);
+	public abstract boolean test(File f);
 }
