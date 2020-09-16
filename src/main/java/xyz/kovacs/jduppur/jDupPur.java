@@ -55,7 +55,7 @@ public class jDupPur {
 			}
 
 			if (Cli.writeOutput()) {
-				writeIndex(index);
+				writeIndex(index, Cli.getOutput());
 			}
 		} else if (Cli.check()) {
 			final Map<String, List<String>> reIndex = reIndex();
@@ -68,6 +68,12 @@ public class jDupPur {
 
 			if (Cli.writeOutput()) {
 				writePurgatory(toPurge);
+			}
+		} else if (Cli.updateIndex()) {
+			if (Cli.writeOutput()) {
+				updateIndex(Cli.getOutput());
+			} else {
+				updateIndex(Cli.getInput());
 			}
 		}
 
@@ -146,6 +152,12 @@ public class jDupPur {
 		return reIndex;
 	}
 
+	private static void updateIndex(final String outputFileName) throws IOException {
+		writeIndex(conditionallyParallel(readIndex(Cli.getInput()).entrySet().stream(), Cli.getParallel())
+				.filter(e -> new File(e.getValue().get(0)).exists())
+				.collect(Collectors.toMap(e -> e.getKey(), e -> e.getValue())), outputFileName);
+	}
+
 	private static Set<String> createPurgatory() throws IOException {
 		final String[] indexes = Cli.getInput().split("\\*");
 		final Pair<List<Pair<String, String>>, List<Pair<String, String>>> purgatory = diffIndexes(
@@ -163,8 +175,16 @@ public class jDupPur {
 		}
 
 		final Set<String> toPurge = SetUtils.union(
-				purgatory.getLeft().stream().map(d -> d.getRight()).map(d -> "(directory) " + d).collect(Collectors.toSet()),
-				purgatory.getRight().stream().map(f -> f.getRight()).map(f -> "(file) " + f).collect(Collectors.toSet()));
+				purgatory.getLeft()
+						.stream()
+						.map(d -> d.getRight())
+						.map(d -> "(directory) " + d)
+						.collect(Collectors.toSet()),
+				purgatory.getRight()
+						.stream()
+						.map(f -> f.getRight())
+						.map(f -> "(file) " + f)
+						.collect(Collectors.toSet()));
 
 		if (LOG.isInfoEnabled()) {
 			toPurge.stream().forEach(p -> {
@@ -188,9 +208,10 @@ public class jDupPur {
 		});
 	}
 
-	private static void writeIndex(final Map<String, List<String>> index) throws IOException {
+	private static void writeIndex(final Map<String, List<String>> index, final String outputFileName)
+			throws IOException {
 		final List<String> output = new ArrayList<>(index.size());
-		LOG.info("Writing index into {}", Cli.getOutput());
+		LOG.info("Writing index into {}", outputFileName);
 		if (Cli.sort() == 0) {
 			for (final Entry<String, List<String>> entry : index.entrySet()) {
 				for (final String fileName : entry.getValue()) {
@@ -217,8 +238,8 @@ public class jDupPur {
 					.map(e -> e[1] + " *" + e[0])
 					.collect(Collectors.toList()));
 		}
-		FileUtils.writeLines(new File(Cli.getOutput()), StandardCharsets.UTF_8.name(), output);
-		LOG.info("Index written into {}", Cli.getOutput());
+		FileUtils.writeLines(new File(outputFileName), StandardCharsets.UTF_8.name(), output);
+		LOG.info("Index written into {}", outputFileName);
 	}
 
 	private static void writePurgatory(final Set<String> toPurge) throws IOException {
@@ -250,7 +271,7 @@ public class jDupPur {
 
 		LOG.debug("Starting to proces {} entries in primary index", primaryIndex.size());
 		int counter = 0;
-		
+
 		for (final Entry<String, List<String>> primaryEntry : primaryIndex.entrySet()) {
 			++counter;
 			LOG.trace("At entry {} out of {}", counter, primaryIndex.size());
@@ -271,7 +292,8 @@ public class jDupPur {
 				continue;
 			}
 
-			for (final String candidateDuplicate : purgatoryIndex.getOrDefault(primaryEntry.getKey(), Collections.emptyList())) {
+			for (final String candidateDuplicate : purgatoryIndex.getOrDefault(primaryEntry.getKey(),
+					Collections.emptyList())) {
 				if (consideredFile.equals(candidateDuplicate)) {
 					continue;
 				}
@@ -355,7 +377,7 @@ public class jDupPur {
 			return true;
 		}).collect(Collectors.toList());
 		LOG.debug("{} files left after directory consolidation", filesNotInDuplicateDirectories.size());
-		
+
 		return Pair.of(directories, filesNotInDuplicateDirectories);
 	}
 

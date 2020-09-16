@@ -50,6 +50,7 @@ public final class Cli {
 	private static final String CREATE_INDEX = "r";
 	private static final String PARALLEL_INDEXING = "p";
 	private static final String SORT_INDEX = "s";
+	private static final String UPDATE_INDEX = "a";
 
 	private static final String CREATE_PURGE_LIST = "u";
 
@@ -84,7 +85,8 @@ public final class Cli {
 			Map.entry(SORT_INDEX,
 					Pair.of("sort-index",
 							"sort index before persisting (0: don't, 1: based on hash, 2: based on path; default: 1)")),
-
+			Map.entry(UPDATE_INDEX, Pair.of("update-index", "updates an index (i.e. removes files, which do not exist); in place, if not combined with -o,--write-index")),
+			
 			Map.entry(CREATE_PURGE_LIST, Pair.of("create-purge-list",
 					"create a list of purgable items, where the first path gives a primary index (files to keep) and the second path gives a purgatory index (files to delete, if duplicate); mutually exclusive with -r,--create-index and -c,--check")),
 
@@ -198,6 +200,8 @@ public final class Cli {
 			return cli.getOptionValue(CHECK);
 		} else if (cli.hasOption(CREATE_PURGE_LIST)) {
 			return Arrays.stream(cli.getOptionValues(CREATE_PURGE_LIST)).collect(Collectors.joining("*"));
+		} else if (cli.hasOption(UPDATE_INDEX)) {
+			return cli.getOptionValue(UPDATE_INDEX);
 		}
 		throw new IllegalStateException("No input found with current configuration");
 	}
@@ -239,6 +243,10 @@ public final class Cli {
 	public static boolean createPurgatory() {
 		return cli.hasOption(CREATE_PURGE_LIST);
 	}
+	
+	public static boolean updateIndex() {
+		return cli.hasOption(UPDATE_INDEX);
+	}
 
 	public static boolean check() {
 		return cli.hasOption(CHECK);
@@ -272,6 +280,9 @@ public final class Cli {
 			if (cli.hasOption(CREATE_PURGE_LIST)) {
 				throw new ParseException("Creating an index and a purge list are mutually exclusive");
 			}
+			if (cli.hasOption(UPDATE_INDEX)) {
+				throw new ParseException("Creating an index and updating it are mutually exclusive");
+			}
 			if (!new File(cli.getOptionValue(CREATE_INDEX)).isAbsolute()) {
 				throw new ParseException("Argument for purgatory index creation must be an absolute path, it was: "
 						+ cli.getOptionValue(CREATE_INDEX));
@@ -297,6 +308,9 @@ public final class Cli {
 			if (cli.hasOption(CHECK)) {
 				throw new ParseException("Checking and creating a purge list are mutually exclusive");
 			}
+			if (cli.hasOption(UPDATE_INDEX)) {
+				throw new ParseException("Creating a purge list and updating an index are mutually exclusive");
+			}
 			String[] indexes = cli.getOptionValues(CREATE_PURGE_LIST);
 			if (!new File(indexes[0]).isAbsolute() || !new File(indexes[1]).isAbsolute()) {
 				throw new ParseException("Both arguments for purge list creation must be an absolute path, it was: "
@@ -310,6 +324,21 @@ public final class Cli {
 			}
 			if (cli.hasOption(CREATE_PURGE_LIST)) {
 				throw new ParseException("Checking and creating a purge list are mutually exclusive");
+			}
+			if (cli.hasOption(UPDATE_INDEX)) {
+				throw new ParseException("Checking an index and updating an index are mutually exclusive");
+			}
+		}
+
+		if (cli.hasOption(UPDATE_INDEX)) {
+			if (cli.hasOption(CREATE_INDEX)) {
+				throw new ParseException("Creating an index and updating it are mutually exclusive");
+			}
+			if (cli.hasOption(CREATE_PURGE_LIST)) {
+				throw new ParseException("Creating a purge list and updating an index are mutually exclusive");
+			}
+			if (cli.hasOption(CHECK)) {
+				throw new ParseException("Checking an index and updating an index are mutually exclusive");
 			}
 		}
 
