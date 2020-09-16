@@ -35,7 +35,7 @@ Output: a file containing a SHA-512 for all files (recursively) found in `C:\Use
 Output: a file containing a SHA-512 for all files (recursively) found in `X:\many-backups-not-sorted\`
 
 #### Third run:
-`--logger-internal 5 --very-verbose --consolidate-directories --create-purge-list C:\Users\foo\Documents\books.sha512 X:\backups.sha512 --write-output X:\to-purge.txt`
+`--logger-interval 5 --very-verbose --consolidate-directories --create-purge-list C:\Users\foo\Documents\books.sha512 X:\backups.sha512 --write-output X:\to-purge.txt`
 
 Output: a file, listing candidate directories and files, which can be deleted in `many-backups-not-sorted`
 
@@ -121,9 +121,21 @@ Another difference is that for `jDupPur` a file not existing is no biggie and wi
 
 ### Is this performant?
 
+```
+... [ INFO]   CrawlerLogger – [83.5227%/81.7877%] Still indexing, currently @ 233340 files out of 279373 (with processed size 778 GB out of 951 GB), elapsed time: 03:36:51.355, estimated time left: 00:48:17.332
+
+... [DEBUG] FootprintLogger – Current estimations for footprint are: RAM: 391 MB, CPU%: 05.2225% (max on 1 thread ≈ 12.5000%), CPUΔt: 01:47:03.406, runtime: 03:37:38.017, I/O throughput: 61 MB/s
+
+[...]
+
+... [ INFO]   CrawlerLogger – [99.9782%/99.9719%] Still indexing, currently @ 279312 files out of 279373 (with processed size 951 GB out of 951 GB), elapsed time: 04:20:21.623, estimated time left: 00:00:04.384
+
+... [DEBUG] FootprintLogger – Current estimations for footprint are: RAM: 269 MB, CPU%: 07.3303% (max on 1 thread ≈ 12.5000%), CPUΔt: 02:10:04.765, runtime: 04:21:09.379, I/O throughput: 62 MB/s
+```
+
 Performant enough for my purposes.
 
-I did not put too much effort into fine-tuning the code itself (memory consumption, CPU cycles), because based on my experience, the bottleneck is anyways I/O on the disk (even for SSDs), although with stream multi-threading is so easy that I opted for it. Plus some light-weight profiling with jVisualVM seems to confirm my assumptions.
+I did not put too much effort into fine-tuning the code itself (memory consumption, CPU cycles), because based on my experience, the bottleneck is anyways I/O on the disk (even for SSDs), although with streams, multi-threading is so easy that I opted for it. Plus some light-weight profiling with jVisualVM seems to confirm my assumptions.
 
 On my SSD (Samsung SSD 850 PRO) the current state of software resulted in parallel 100% I/O at around 550MB/s instead of the single-threaded performance of around 200MB/s. See, of course, [caveats for parallel streams](https://gist.github.com/AFulgens/ba1fec3235cfda1269550fb8e9793db3). Here the trade-off is that reading many smaller files on one thread and some bigger files on other threads seem to balance correctly with parallelism. On an HDD this won't work, that's why there is a switch 😎 My numbers on an HDD (Toshiba Performance X300 via USB3) were around 120MB/s for a single threaded read (of bigger files, dropping to 40-50 MB/s for many small files), while the parallel indexing couldn't go above 60MB/s. On a NAS (RAID6 of 8 WD Red PROs) TODO.
 

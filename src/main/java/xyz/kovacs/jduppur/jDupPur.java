@@ -136,20 +136,21 @@ public class jDupPur {
 	private static Map<String, List<String>> reIndex() throws IOException {
 		final List<String> input = FileUtils.readLines(new File(Cli.getInput()), StandardCharsets.UTF_8);
 		LOG.info("{} files listed in index {}", input.size(), Cli.getInput());
-	
+
 		final long start = System.nanoTime();
 		Map<String, List<String>> reIndex = Crawler.reIndex(input, Cli.getDigest(), Cli.getParallel(),
 				Cli.getExcludes());
 		final long end = System.nanoTime();
 		LOG.info("{} files re-indexed in {}", input.size(), humanReadableTime(end - start));
-	
+
 		return reIndex;
 	}
 
 	private static Set<String> createPurgatory() throws IOException {
 		final String[] indexes = Cli.getInput().split("\\*");
-		final Pair<List<Pair<String, String>>, List<Pair<String, String>>> purgatory =  diffIndexes(readIndex(indexes[0]), readIndex(indexes[1]));
-		
+		final Pair<List<Pair<String, String>>, List<Pair<String, String>>> purgatory = diffIndexes(
+				readIndex(indexes[0]), readIndex(indexes[1]));
+
 		if (LOG.isDebugEnabled()) {
 			purgatory.getLeft().stream().forEach(p -> {
 				LOG.debug("Duplicate directories found:" + System.getProperty("line.separator") + "\tdir A: {}"
@@ -160,23 +161,23 @@ public class jDupPur {
 						+ System.getProperty("line.separator") + "\tfile B: {}", p.getLeft(), p.getRight());
 			});
 		}
-	
+
 		final Set<String> toPurge = SetUtils.union(
-				purgatory.getLeft().stream().map(d -> d.getRight()).collect(Collectors.toSet()),
-				purgatory.getRight().stream().map(d -> d.getRight()).collect(Collectors.toSet()));
-		
+				purgatory.getLeft().stream().map(d -> d.getRight()).map(d -> "(directory) " + d).collect(Collectors.toSet()),
+				purgatory.getRight().stream().map(f -> f.getRight()).map(f -> "(file) " + f).collect(Collectors.toSet()));
+
 		if (LOG.isInfoEnabled()) {
 			toPurge.stream().forEach(p -> {
 				LOG.info("To purge: {}", p);
 			});
 		}
-	
+
 		return toPurge;
 	}
 
 	private static void checkForDuplicates(final Map<String, List<String>> index) throws IOException {
 		final Pair<List<Pair<String, String>>, List<Pair<String, String>>> diff = diffIndexes(index, index);
-	
+
 		diff.getLeft().stream().forEach(p -> {
 			LOG.warn("Duplicate directories found:" + System.getProperty("line.separator") + "\tdir A: {}"
 					+ System.getProperty("line.separator") + "\tdir B: {}", p.getLeft(), p.getRight());
@@ -222,9 +223,9 @@ public class jDupPur {
 
 	private static void writePurgatory(final Set<String> toPurge) throws IOException {
 		LOG.info("Writing purge list into {}", Cli.getOutput());
-	
+
 		FileUtils.writeLines(new File(Cli.getOutput()), StandardCharsets.UTF_8.name(), toPurge);
-	
+
 		LOG.info("Index written into {}", Cli.getOutput());
 	}
 
@@ -247,9 +248,18 @@ public class jDupPur {
 
 		final List<Pair<String, String>> files = new ArrayList<>();
 
+		LOG.debug("Starting to proces {} entries in primary index", primaryIndex.size());
+		int counter = 0;
+		
 		for (final Entry<String, List<String>> primaryEntry : primaryIndex.entrySet()) {
+			++counter;
+			LOG.trace("At entry {} out of {}", counter, primaryIndex.size());
+			if (counter % 1000 == 0) {
+				LOG.debug("At entry {} out of {}", counter, primaryIndex.size());
+			}
 			String consideredFile = primaryEntry.getValue().get(0);
-			seeker: if (!Cli.getExcludes().isEmpty()) {
+			seeker: if (!Cli.getExcludes().isEmpty()
+					&& !(Cli.getExcludes().size() == 1 && Cli.getExcludes().iterator().next().pattern().equals(":"))) {
 				for (final Pattern exclusionPattern : Cli.getExcludes()) {
 					for (final String candidateFile : primaryEntry.getValue()) {
 						if (!exclusionPattern.matcher(candidateFile).matches()) {
@@ -261,7 +271,7 @@ public class jDupPur {
 				continue;
 			}
 
-			for (final String candidateDuplicate : purgatoryIndex.get(primaryEntry.getKey())) {
+			for (final String candidateDuplicate : purgatoryIndex.getOrDefault(primaryEntry.getKey(), Collections.emptyList())) {
 				if (consideredFile.equals(candidateDuplicate)) {
 					continue;
 				}
@@ -280,6 +290,8 @@ public class jDupPur {
 
 		List<Pair<String, String>> directories = new ArrayList<>();
 		if (Cli.consolidateDirectories()) {
+			counter = 0;
+			LOG.debug("Consolidating directories for {} file pairs", files.size());
 			List<String> primaries = files.stream()
 					.map(Pair::getLeft)
 					.map(jDupPur::properAbsolutePath)
@@ -289,6 +301,11 @@ public class jDupPur {
 					.map(jDupPur::properAbsolutePath)
 					.collect(Collectors.toList());
 			primary: for (final String primary : primaries) {
+				++counter;
+				LOG.trace("Consolidating pair number {} out of {}", counter, files.size());
+				if (counter % 1000 == 0) {
+					LOG.debug("Consolidating pair number {} out of {}", counter, files.size());
+				}
 				for (final Pair<String, String> directory : directories) {
 					if (StringUtils.startsWithIgnoreCase(primary, directory.getLeft())) {
 						continue primary;
@@ -327,6 +344,7 @@ public class jDupPur {
 				}
 			}
 		}
+		LOG.debug("{} directories found during consolidation", directories.size());
 		List<String> directoriesToSkip = directories.stream().map(Pair::getRight).collect(Collectors.toList());
 		List<Pair<String, String>> filesNotInDuplicateDirectories = files.stream().filter(p -> {
 			for (final String directory : directoriesToSkip) {
@@ -336,7 +354,8 @@ public class jDupPur {
 			}
 			return true;
 		}).collect(Collectors.toList());
-
+		LOG.debug("{} files left after directory consolidation", filesNotInDuplicateDirectories.size());
+		
 		return Pair.of(directories, filesNotInDuplicateDirectories);
 	}
 
