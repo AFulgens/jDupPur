@@ -39,6 +39,11 @@ Output: a file containing a SHA-512 for all files (recursively) found in `X:\man
 
 Output: a file, listing candidate directories and files, which can be deleted in `many-backups-not-sorted`
 
+#### Fourth run (after deleting files based on the purge list):
+`--logger-interval 5 --very-verbose --update-index X:\backups.sha512`
+
+Output: the file `X:\backups.sha512` is updated (i.e. the deleted files are removed from it).
+
 ### Identifying duplicates in existing data
 
 #### First run:
@@ -56,10 +61,14 @@ Command line parameters
 -----------------------
 
 ```
-usage: jDupPur [-@ <arg>] [-c <arg>] [-d] [-e <arg>] [-h] [-l <arg>] [-n]
-       [-o <arg>] [-p] [-q] [-r <arg>] [-s <arg>] [-u <arg>] [-v] [-vv]
+usage: jDupPur [-@ <arg>] [-a <arg>] [-c <arg>] [-d] [-e <arg>] [-h] [-l
+       <arg>] [-n] [-o <arg>] [-p] [-q] [-r <arg>] [-s <arg>] [-u <arg>]
+       [-v] [-vv]
  -@,--hash-function <arg>       overrides the hash function to be used
                                 (default: SHA-512)
+ -a,--update-index <arg>        updates an index (i.e. removes files,
+                                which do not exist); in place, if not
+                                combined with -o,--write-index
  -c,--check <arg>               read hashes from the given file and check
                                 them
  -d,--check-duplicates          if this flag is set, checking for
