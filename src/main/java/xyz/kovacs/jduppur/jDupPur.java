@@ -153,9 +153,19 @@ public class jDupPur {
 	}
 
 	private static void updateIndex(final String outputFileName) throws IOException {
-		writeIndex(conditionallyParallel(readIndex(Cli.getInput()).entrySet().stream(), Cli.getParallel())
-				.filter(e -> new File(e.getValue().get(0)).exists())
-				.collect(Collectors.toMap(e -> e.getKey(), e -> e.getValue())), outputFileName);
+		final Map<String, List<String>> index = readIndex(Cli.getInput());
+		
+		final Map<String, List<String>> updatedIndex = new HashMap<>(index.size() + 1, 1.0f);
+		
+		for (final Entry<String, List<String>> entry : index.entrySet()) {
+			for (final String file : entry.getValue()) {
+				if (new File(file).exists()) {
+					updatedIndex.computeIfAbsent(entry.getKey(), k -> new ArrayList<>()).add(file);
+				}
+			}
+		}
+		
+		writeIndex(updatedIndex, outputFileName);
 	}
 
 	private static Set<String> createPurgatory() throws IOException {
