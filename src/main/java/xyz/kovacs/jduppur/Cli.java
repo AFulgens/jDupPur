@@ -71,8 +71,9 @@ public final class Cli {
 			Map.entry(LOGGER_INTERVAL, Pair.of("logger-interval",
 					"interval in seconds of logging during crawling, indexing, and purging (must be at least 1, default: Long.MAX_VALUE)")),
 
-			Map.entry(EXCLUDE, Pair.of("exclude", "exclude paths, which match any of these regexes (separator: ' * ')")),
-			
+			Map.entry(EXCLUDE,
+					Pair.of("exclude", "exclude paths, which match any of these regexes (separator: ' * ')")),
+
 			Map.entry(HASH_FUNCTION,
 					Pair.of("hash-function", "overrides the hash function to be used (default: SHA-512)")),
 
@@ -85,8 +86,9 @@ public final class Cli {
 			Map.entry(SORT_INDEX,
 					Pair.of("sort-index",
 							"sort index before persisting (0: don't, 1: based on hash, 2: based on path; default: 1)")),
-			Map.entry(UPDATE_INDEX, Pair.of("update-index", "updates an index (i.e. removes files, which do not exist); in place, if not combined with -o,--write-index")),
-			
+			Map.entry(UPDATE_INDEX, Pair.of("update-index",
+					"updates an index (i.e. removes files, which do not exist); in place, if not combined with -o,--write-index; a second (optional) parameter gives a base-path, which will be scanned and any missing files will be added to the index")),
+
 			Map.entry(CREATE_PURGE_LIST, Pair.of("create-purge-list",
 					"create a list of purgable items, where the first path gives a primary index (files to keep) and the second path gives a purgatory index (files to delete, if duplicate); mutually exclusive with -r,--create-index and -c,--check")),
 
@@ -112,6 +114,8 @@ public final class Cli {
 		OPTIONS.getOption(CHECK_DUPLICATES).setArgs(0);
 		OPTIONS.getOption(CONSOLIDATE_DIRECTORIES).setArgs(0);
 		OPTIONS.getOption(CREATE_PURGE_LIST).setArgs(2);
+		OPTIONS.getOption(UPDATE_INDEX).setArgs(2);
+		OPTIONS.getOption(UPDATE_INDEX).setOptionalArg(true);
 	}
 
 	private static CommandLine cli;
@@ -201,7 +205,7 @@ public final class Cli {
 		} else if (cli.hasOption(CREATE_PURGE_LIST)) {
 			return Arrays.stream(cli.getOptionValues(CREATE_PURGE_LIST)).collect(Collectors.joining("*"));
 		} else if (cli.hasOption(UPDATE_INDEX)) {
-			return cli.getOptionValue(UPDATE_INDEX);
+			return Arrays.stream(cli.getOptionValues(UPDATE_INDEX)).collect(Collectors.joining("*"));
 		}
 		throw new IllegalStateException("No input found with current configuration");
 	}
@@ -239,11 +243,11 @@ public final class Cli {
 	public static boolean createIndex() {
 		return cli.hasOption(CREATE_INDEX);
 	}
-	
+
 	public static boolean createPurgatory() {
 		return cli.hasOption(CREATE_PURGE_LIST);
 	}
-	
+
 	public static boolean updateIndex() {
 		return cli.hasOption(UPDATE_INDEX);
 	}
@@ -339,6 +343,10 @@ public final class Cli {
 			}
 			if (cli.hasOption(CHECK)) {
 				throw new ParseException("Checking an index and updating an index are mutually exclusive");
+			}
+
+			if (cli.getOptionValues(UPDATE_INDEX).length < 1) {
+				throw new ParseException("Updating an index required at least one argument");
 			}
 		}
 

@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -70,10 +71,12 @@ public class jDupPur {
 				writePurgatory(toPurge);
 			}
 		} else if (Cli.updateIndex()) {
+			final String[] arguments = StringUtils.splitByWholeSeparator(Cli.getInput(), "*");
+
 			if (Cli.writeOutput()) {
-				updateIndex(Cli.getOutput());
+				updateIndex(arguments[0], Cli.getOutput(), arguments.length == 2 ? arguments[1] : null);
 			} else {
-				updateIndex(Cli.getInput());
+				updateIndex(arguments[0], arguments[0], arguments.length == 2 ? arguments[1] : null);
 			}
 		}
 
@@ -152,16 +155,42 @@ public class jDupPur {
 		return reIndex;
 	}
 
-	private static void updateIndex(final String outputFileName) throws IOException {
-		final Map<String, List<String>> index = readIndex(Cli.getInput());
-		
+	private static void updateIndex(final String inputFileName, final String outputFileName, final String root) throws IOException {
+		final Map<String, List<String>> index = readIndex(inputFileName);
+
 		final Map<String, List<String>> updatedIndex = new HashMap<>(index.size() + 1, 1.0f);
-		
+
 		for (final Entry<String, List<String>> entry : index.entrySet()) {
 			for (final String file : entry.getValue()) {
 				if (new File(file).exists()) {
 					updatedIndex.computeIfAbsent(entry.getKey(), k -> new ArrayList<>()).add(file);
 				}
+			}
+		}
+
+		final Set<String> fileList = new HashSet<>(Crawler.list(root, Cli.getExcludes()));
+		LOG.info("{} files listed recursively in {}", fileList.size(), root);
+
+		fileList.removeAll(updatedIndex.values().stream().flatMap(List::stream).collect(Collectors.toSet()));
+
+		LOG.info("{} files, which are not yet in the index", fileList.size());
+		
+		final long start = System.nanoTime();
+		final Map<String, List<String>> newIndex = Crawler.index(fileList, Cli.getDigest(), Cli.getParallel(),
+				Cli.getExcludes());
+		final long end = System.nanoTime();
+		LOG.info("{} files indexed into {} hashes in {}", newIndex.values().stream().flatMap(List::stream).count(),
+				newIndex.size(), humanReadableTime(end - start));
+		if (LOG.isTraceEnabled()) {
+			final SortedMap<String, List<String>> sorted = new TreeMap<>(newIndex);
+			for (final Entry<String, List<String>> entry : sorted.entrySet()) {
+				LOG.trace("{} : {}", entry.getKey(), entry.getValue());
+			}
+		}
+		
+		for (Entry<String, List<String>> entry : newIndex.entrySet()) {
+			for (String fileName : entry.getValue()) {
+				updatedIndex.computeIfAbsent(entry.getKey(), k -> new ArrayList<>()).add(fileName);
 			}
 		}
 		
